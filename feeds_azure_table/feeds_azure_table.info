@@ -1,0 +1,14 @@
+name = Azure Table Storage Processor
+description = "Provides plugins for Feeds module to import parsed data into an Azure Table."
+core = 7.x
+package = "Feeds"
+
+dependencies[] = feeds
+dependencies[] = data
+
+
+; Information added by drush on 2013-03-26
+version = "unknown"
+project = "dkan"
+datestamp = "1364332490"
+
