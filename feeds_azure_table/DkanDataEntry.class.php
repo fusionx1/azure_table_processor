@@ -42,7 +42,7 @@ class DkanDataEntry extends Microsoft_WindowsAzure_Storage_TableEntity
         $partitionKey = $nowDT->format("mdY");
         
         $this->_partitionKey = $partitionKey;
-        $this->_rowKey =  1000; // trim(com_create_guid(), '{}');
+        $this->_rowKey =  _partitionKey;  // trim(com_create_guid(), '{}');
         
     }
     
