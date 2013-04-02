@@ -36,19 +36,19 @@ class AzureTableProcessor extends FeedsProcessor {
         continue;
       }
       $id = $this->existingItemId($parser_result, $source);
-      if ($id != FALSE || $this->config['update_existing']) {
+      if ($id != FALSE || $this->config['update_existing'] && false) {
         $data['id'] = $id;
         // TODO: Use Azure SDK to save.
         // This currently uses the DataHandler.inc from the data module
         // to load and save database info. We could either create
         // AzureTableHandler.inc or just treat the SDK as Azures version
         // of that.
-        $this->handler($source)->update($cleaned_data, 'id');
+        //$this->handler($source)->update($cleaned_data, 'id');
       }
       else {
-        $this->handler($source)->save($cleaned_data);
+        //$this->handler($source)->save($cleaned_data);
 
-        AzureTableProcessor::dkan_insert_entity($source, $feed_nid);
+        AzureTableProcessor::dkan_insert_entity($source, $this->tableName($source));
         
         
       }
@@ -232,7 +232,7 @@ class AzureTableProcessor extends FeedsProcessor {
    * @todo Make *Data module* throw exception when table can't be found or
    *   can't be created.
    */
-  protected function table(FeedsSource $source, $schema) {
+  protected function table(FeedsSource $source) {
   
     // TODO: Create and / or retrieve info from Azure Table.
     if ($table = data_get_table($this->tableName($source))) {
@@ -243,62 +243,65 @@ class AzureTableProcessor extends FeedsProcessor {
         return $table;
       }
     }
-    throw new Exception(t('Could not create data table.'));
-  
+   
   }
   
 function dkan_insert_entity($source, $feed_nid){
-  $table_conn = AzureTableProcessor::dkan_table_store_connection();
-  $data = new DkanDataEntry();
-	
-  $data->title ="sample-title"; //$source->title;
-  $data->uid = 62; //$source->uid;
-  $data->published = 1;
-	
-  $table_conn->insertEntity('feedsdatastore'.$feed_nid, $data);
+  $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
 
+  $nowDT = new DateTime('now', new DateTimeZone('UTC'));
+  $partitionKey = $nowDT->format("mdY");
+  $rowKey = uniqid();
+
+  $entity = new WindowsAzure\Table\Models\Entity();
+  $entity->setPartitionKey($partitionKey);
+  $entity->setRowKey($rowKey);
+  $entity->addProperty("title", WindowsAzure\Table\Models\EdmType::STRING, "sample-title".$source->title);
+
+  try{
+    $tableRestProxy->insertEntity($feed_nid, $entity);
+  } catch(WindowsAzure\Common\ServiceException $e){
+    $code = $e->getCode();
+    $error_message = $e->getMessage();
+    echo $code.": ".$error_message."<br />";
+  }
+ 
 } 
  
 function dkan_create_table($source){
-$table_conn = AzureTableProcessor::dkan_table_store_connection();
+$tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
 
-// Create table if not exist
-$table_conn->createTableIfNotExists($source);
-return $source;
+ try {
+      // Create table.
+      $tableRestProxy->createTable($source);
+	  //return $tableRestProxy;
+	  echo "success";
+  }
+  catch(WindowsAzure\Common\ServiceException $e){
+    $code = $e->getCode();
+    $error_message = $e->getMessage();
+    // Handle exception based on error codes and messages.
+    // Error codes and messages can be found here: 
+    // http://msdn.microsoft.com/en-us/library/windowsazure/dd179438.aspx
+	//return false;
+	echo "error";
+  }
 
-drupal_message("success");
 }
+
+
 
 function dkan_table_store_connection(){
-// Include the Windows Azure SDK for PHP objects
-require_once('Microsoft/AutoLoader.php');
-require_once('DkanDataEntry.class.php');
 
-/*
-* Configuration values
-* NOTE: By default this sample is set to run in local development storage
-* if you wish to run the sample on Windows Azure you must change
-* DEV to false and set your account and keys appropriately
-*/
-define('DEV', false);
-define('STORAGE_ACCOUNT', 'dkantest');
-define('STORAGE_KEY', '9VlHhFp/4SWRIp4eRgCpINgQPr4AxgqQTbn+53ouGCQLeCoiNGMtv/6p/B2z9xE5xfOnhi/ABczzWblnnVo37g=');
+require_once '/var/www/drupalcamp/sites/all/vendor/autoload.php';
+  
+//$connectionString=  'DefaultEndpointsProtocol=https;AccountName=dkantest;AccountKey=9VlHhFp/4SWRIp4eRgCpINgQPr4AxgqQTbn+53ouGCQLeCoiNGMtv/6p/B2z9xE5xfOnhi/ABczzWblnnVo37g=';;
+$connectionString=  'DefaultEndpointsProtocol=https;AccountName=dkan;AccountKey=o1z7LL4Gyupr3W4TAN152SniTzXmYQsig60mar/WAvgxcId66PqHyb42end4evKuhJfLEkJML1Qp4b+YWXhFAA==';
 
+  // Create table REST proxy.
+  $connection = WindowsAzure\Common\ServicesBuilder::getInstance()->createTableService($connectionString);
+  return $connection;
 
-// Setup the connection
-if(DEV) {
-    // Connect to local development storage
-    $conn = new Microsoft_WindowsAzure_Storage_Table();
-} else {
-    // Connect to Windows Azure Storage in the cloud
-    $conn = new Microsoft_WindowsAzure_Storage_Table(
-                'table.core.windows.net',
-                STORAGE_ACCOUNT,
-                STORAGE_KEY
-            );
-}
-
-return $conn;
 }
 
 
