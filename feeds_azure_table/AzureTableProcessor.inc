@@ -44,12 +44,11 @@ class AzureTableProcessor extends FeedsProcessor {
         // AzureTableHandler.inc or just treat the SDK as Azures version
         // of that.
         //$this->handler($source)->update($cleaned_data, 'id');
+        AzureTableProcessor::dkan_insert_entity($data, $this->tableName($source), 1);
       }
       else {
         //$this->handler($source)->save($cleaned_data);
-
-        AzureTableProcessor::dkan_insert_entity($source, $this->tableName($source));
-        
+        AzureTableProcessor::dkan_insert_entity($data, $this->tableName($source), 0);
         
       }
     }
@@ -235,7 +234,7 @@ class AzureTableProcessor extends FeedsProcessor {
   protected function table(FeedsSource $source) {
   
     // TODO: Create and / or retrieve info from Azure Table.
-    if ($table = data_get_table($this->tableName($source))) {
+    if ($table = AzureTableProcessor::dkan_get_table($this->tableName($source))) {
       return $table;
     }
     else {
@@ -246,7 +245,8 @@ class AzureTableProcessor extends FeedsProcessor {
    
   }
   
-function dkan_insert_entity($source, $feed_nid){
+
+function dkan_insert_entity($data, $feed_nid, $merge){
   $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
 
   $nowDT = new DateTime('now', new DateTimeZone('UTC'));
@@ -254,19 +254,33 @@ function dkan_insert_entity($source, $feed_nid){
   $rowKey = uniqid();
 
   $entity = new WindowsAzure\Table\Models\Entity();
-  $entity->setPartitionKey($partitionKey);
+  $entity->setPartitionKey($feed_nid);
   $entity->setRowKey($rowKey);
-  $entity->addProperty("title", WindowsAzure\Table\Models\EdmType::STRING, "sample-title".$source->title);
 
+  $entity->addProperty("lon", WindowsAzure\Table\Models\EdmType::STRING, $data['lon']);
+  $entity->addProperty("lat", WindowsAzure\Table\Models\EdmType::STRING, $data['lat']);
+  $entity->addProperty("UnitType", WindowsAzure\Table\Models\EdmType::STRING, $data['unit_type']);
+  $entity->addProperty("DistName", WindowsAzure\Table\Models\EdmType::STRING, $data['dist_name']);
+  $entity->addProperty("ProvName", WindowsAzure\Table\Models\EdmType::STRING, $data['prov_name']);
+  $entity->addProperty("DariDist", WindowsAzure\Table\Models\EdmType::STRING, $data['dari_dist']);
+  $entity->addProperty("DariProv", WindowsAzure\Table\Models\EdmType::STRING, $data['dari_prov']);
+  $entity->addProperty("DistID", WindowsAzure\Table\Models\EdmType::STRING, $data['dist_id']);
+  $entity->addProperty("ProvID", WindowsAzure\Table\Models\EdmType::STRING, $data['prov_id']);
   try{
-    $tableRestProxy->insertEntity($feed_nid, $entity);
+    if(!$merge){
+      $tableRestProxy->insertEntity($feed_nid, $entity);
+    }else{
+     $tableRestProxy->insertOrMergeEntity($feed_nid, $entity);
+    }  
   } catch(WindowsAzure\Common\ServiceException $e){
     $code = $e->getCode();
     $error_message = $e->getMessage();
     echo $code.": ".$error_message."<br />";
-  }
+  } 
  
 } 
+ 
+
  
 function dkan_create_table($source){
 $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
@@ -289,19 +303,13 @@ $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
 
 }
 
-
-
 function dkan_table_store_connection(){
+  require_once '/var/www/drupalcamp/sites/all/libraries/vendor/autoload.php';
 
-require_once '/var/www/drupalcamp/sites/all/vendor/autoload.php';
-  
-//$connectionString=  'DefaultEndpointsProtocol=https;AccountName=dkantest;AccountKey=9VlHhFp/4SWRIp4eRgCpINgQPr4AxgqQTbn+53ouGCQLeCoiNGMtv/6p/B2z9xE5xfOnhi/ABczzWblnnVo37g=';;
-$connectionString=  'DefaultEndpointsProtocol=https;AccountName=dkan;AccountKey=o1z7LL4Gyupr3W4TAN152SniTzXmYQsig60mar/WAvgxcId66PqHyb42end4evKuhJfLEkJML1Qp4b+YWXhFAA==';
-
+  $connectionString=  'DefaultEndpointsProtocol=https;AccountName=nuamsdevelopers;AccountKey=go7XHIx7fanEOYX6YeDH4AKw8jCyDMAwzEHTaSHzVSCHbPAmBHfiuBQ7UPeSdLDvUR+VaMR1zar7UYMa13DLtQ==';
   // Create table REST proxy.
   $connection = WindowsAzure\Common\ServicesBuilder::getInstance()->createTableService($connectionString);
   return $connection;
-
 }
 
 
