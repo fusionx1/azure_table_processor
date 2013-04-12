@@ -31,30 +31,9 @@ class AzureTableProcessor extends FeedsProcessor {
     $table = $this->table($source);
 
     while ($data = $parser_result->shiftItem()) {
-
-      if ($expiry_time != FEEDS_EXPIRE_NEVER && $data['timestamp'] < (FEEDS_REQUEST_TIME - $expiry_time)) {
-        continue;
-      }
-      $id = $this->existingItemId($parser_result, $source);
-      if ($id != FALSE || $this->config['update_existing'] && false) {
-        $data['id'] = $id;
-        // TODO: Use Azure SDK to save.
-        // This currently uses the DataHandler.inc from the data module
-        // to load and save database info. We could either create
-        // AzureTableHandler.inc or just treat the SDK as Azures version
-        // of that.
-        //$this->handler($source)->update($cleaned_data, 'id');
-        AzureTableProcessor::dkan_insert_entity($data, $this->tableName($source), 1);
-      }
-      else {
-        //$this->handler($source)->save($cleaned_data);
-        AzureTableProcessor::dkan_insert_entity($data, $this->tableName($source), 0);
-        
-      }
+        AzureTableProcessor::dkan_entity_save($data, $this->tableName($source));
     }
-
   }
-
   /**
    * Count items imported by this source.
    */
@@ -219,7 +198,7 @@ class AzureTableProcessor extends FeedsProcessor {
    */
   protected function tableName(FeedsSource $source) {
     // TODO: Determine the Azure Table name.
-    return 'feedsdatastore' . $source->feed_nid;
+    return 'feedsdatastore'. $source->feed_nid;
   }
 
   /**
@@ -232,21 +211,24 @@ class AzureTableProcessor extends FeedsProcessor {
    *   can't be created.
    */
   protected function table(FeedsSource $source) {
-  
+  $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
     // TODO: Create and / or retrieve info from Azure Table.
-    if ($table = AzureTableProcessor::dkan_get_table($this->tableName($source))) {
-      return $table;
-    }
-    else {
-      if ($table = AzureTableProcessor::dkan_create_table($this->tableName($source))) {
-        return $table;
-      }
-    }
-   
+    try{  
+       $tableRestProxy->getTable($this->tableName($source));
+    }catch(WindowsAzure\Common\ServiceException $e){
+       $code = $e->getCode();
+       $error_message = $e->getMessage();
+       if($code == 404){ //table doestn exist
+	     $table = AzureTableProcessor::dkan_create_table($this->tableName($source));
+	     return $this->tableName($source);
+	   }elseif($code == 409){ //table exist
+	     return $this->tableName($source);
+	   }
+    }  
   }
   
 
-function dkan_insert_entity($data, $feed_nid, $merge){
+function dkan_entity_save($data, $feed_nid){
   $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
 
   $nowDT = new DateTime('now', new DateTimeZone('UTC'));
@@ -257,29 +239,18 @@ function dkan_insert_entity($data, $feed_nid, $merge){
   $entity->setPartitionKey($feed_nid);
   $entity->setRowKey($rowKey);
 
-  $entity->addProperty("lon", WindowsAzure\Table\Models\EdmType::STRING, $data['lon']);
-  $entity->addProperty("lat", WindowsAzure\Table\Models\EdmType::STRING, $data['lat']);
-  $entity->addProperty("UnitType", WindowsAzure\Table\Models\EdmType::STRING, $data['unit_type']);
-  $entity->addProperty("DistName", WindowsAzure\Table\Models\EdmType::STRING, $data['dist_name']);
-  $entity->addProperty("ProvName", WindowsAzure\Table\Models\EdmType::STRING, $data['prov_name']);
-  $entity->addProperty("DariDist", WindowsAzure\Table\Models\EdmType::STRING, $data['dari_dist']);
-  $entity->addProperty("DariProv", WindowsAzure\Table\Models\EdmType::STRING, $data['dari_prov']);
-  $entity->addProperty("DistID", WindowsAzure\Table\Models\EdmType::STRING, $data['dist_id']);
-  $entity->addProperty("ProvID", WindowsAzure\Table\Models\EdmType::STRING, $data['prov_id']);
+  foreach($data as $key => $val){
+    $entity->addProperty($key, WindowsAzure\Table\Models\EdmType::STRING, $data[$key]);
+  }
   try{
-    if(!$merge){
-      $tableRestProxy->insertEntity($feed_nid, $entity);
-    }else{
-     $tableRestProxy->insertOrMergeEntity($feed_nid, $entity);
-    }  
+      $tableRestProxy->insertOrReplaceEntity($feed_nid, $entity);
   } catch(WindowsAzure\Common\ServiceException $e){
     $code = $e->getCode();
     $error_message = $e->getMessage();
-    echo $code.": ".$error_message."<br />";
+    //echo $code.": ".$error_message."<br />";
   } 
  
 } 
- 
 
  
 function dkan_create_table($source){
@@ -288,8 +259,7 @@ $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
  try {
       // Create table.
       $tableRestProxy->createTable($source);
-	  //return $tableRestProxy;
-	  echo "success";
+	  return true;
   }
   catch(WindowsAzure\Common\ServiceException $e){
     $code = $e->getCode();
@@ -297,8 +267,6 @@ $tableRestProxy = AzureTableProcessor::dkan_table_store_connection();
     // Handle exception based on error codes and messages.
     // Error codes and messages can be found here: 
     // http://msdn.microsoft.com/en-us/library/windowsazure/dd179438.aspx
-	//return false;
-	echo "error";
   }
 
 }
